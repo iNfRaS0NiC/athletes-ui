@@ -231,6 +231,7 @@ function render(){
       '<span>Page source<b>' + t.fromWikitext + '</b></span>' +
       '<span>Wikidata<b>' + t.fromWikidata + '</b></span>' +
       '<span>Read off the page<b>' + t.fromHtml + '</b></span>' +
+      (t.duplicates ? '<span>Duplicates skipped<b>' + t.duplicates + '</b></span>' : '') +
     '</div>'));
 
   var keys = Object.keys(state.blanks);
@@ -291,10 +292,15 @@ function step(index){
         if (!state.blanks[k]) state.blanks[k] = {count: 0, reason: res.blanks[k].reason};
         state.blanks[k].count += res.blanks[k].count;
       }
+      t.duplicates += res.duplicates || 0;
       state.log.push(res.title);
       state.log.push('  ' + res.total + ' athletes: ' + res.fromWikitext +
         ' from the page source, ' + res.fromWikidata + ' more from Wikidata');
       if (res.fromHtml) state.log.push('  ' + res.fromHtml + ' countries read off the page');
+      if (res.duplicates) {
+        state.log.push('  ' + res.duplicates + ' already on the sheet, skipped' +
+          (res.enriched ? ' (' + res.enriched + ' gaps filled in)' : ''));
+      }
       if (!res.total) state.log.push('  nothing found - try a sub-page for a single event');
       render();
       step(index + 1);
@@ -307,11 +313,21 @@ function step(index){
     .processPage(state.sheet, state.pages[index], options());
 }
 
+function complain(message, focus){
+  $('out').innerHTML = panel('', '<div class="note bad">' + esc(message) + '</div>');
+  if (focus) $(focus).focus();
+}
+
 $('form').addEventListener('submit', function(e){
   e.preventDefault();
   var pages = $('pages').value.split('\n').filter(function(x){ return x.trim(); });
   if (!pages.length){
-    $('out').innerHTML = panel('', '<div class="note bad">Paste at least one Wikipedia link.</div>');
+    complain('Paste at least one Wikipedia link.', 'pages');
+    return;
+  }
+  if (!$('sport').value.trim()){
+    complain('Type the sport first - it goes into the Sport column and cannot '
+      + 'be filled in afterwards without editing every row.', 'sport');
     return;
   }
   $('run').disabled = true; $('run').textContent = 'Working...';
@@ -321,7 +337,8 @@ $('form').addEventListener('submit', function(e){
     .withSuccessHandler(function(sheetName){
       state = {sheet: sheetName, pages: pages, log: [], blanks: {},
         totals: {total: 0, fromWikitext: 0, fromWikidata: 0, fromHtml: 0,
-                 missingCountry: 0, missingDob: 0, missingGender: 0}};
+                 missingCountry: 0, missingDob: 0, missingGender: 0,
+                 duplicates: 0}};
       step(0);
     })
     .withFailureHandler(function(err){
