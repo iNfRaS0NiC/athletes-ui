@@ -238,6 +238,16 @@ $('theme').addEventListener('click', function(){
 var state = {};
 var perPage = {};   // link -> gender chosen for that link alone
 
+/** A pasted link can lose a character; say so instead of chasing a ghost. */
+function badLinks(list){
+  return list.filter(function(l){
+    var t = l.trim();
+    if (/^https?:\/\/[a-z]{2,3}\.(m\.)?wikipedia\.org\/wiki\/.+/i.test(t)) return false;
+    if (/^https?:\/\//i.test(t)) return true;          // a URL, but not a wiki one
+    return /[\/:]/.test(t);                            // half a URL
+  });
+}
+
 function titleOf(link){
   var text = link.trim().split('#')[0].split('?')[0];
   if (text.indexOf('/wiki/') > -1) text = text.split('/wiki/').pop();
@@ -510,6 +520,13 @@ $('form').addEventListener('submit', function(e){
   var pages = $('pages').value.split('\n').filter(function(x){ return x.trim(); });
   if (!pages.length){
     complain('Paste at least one Wikipedia link.', 'pages');
+    return;
+  }
+  var bad = badLinks(pages);
+  if (bad.length){
+    complain('This does not look like a Wikipedia address: ' + bad[0] +
+      ' - check the beginning of the line, a character is often lost when ' +
+      'copying.', 'pages');
     return;
   }
   if (!$('sport').value.trim()){
