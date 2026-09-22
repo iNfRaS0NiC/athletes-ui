@@ -292,7 +292,7 @@ $('expand').addEventListener('click', function(){
   btn.disabled = true;
   $('expandNote').textContent = 'Looking\u2026';
 
-  var pending = links.length, added = 0;
+  var pending = links.length, added = 0, failure = '';
   var have = {};
   links.forEach(function(l){ have[titleOf(l).toLowerCase()] = true; });
 
@@ -306,21 +306,30 @@ $('expand').addEventListener('click', function(){
             encodeURI(title.replace(/ /g, '_'));
           added++;
         });
-        if (--pending === 0) doneExpanding(added);
+        if (--pending === 0) doneExpanding(added, failure);
       })
-      .withFailureHandler(function(){
-        if (--pending === 0) doneExpanding(added);
+      .withFailureHandler(function(err){
+        // an error used to read the same as an empty result, which sent the
+        // search for a cause on the wrong page entirely
+        failure = err && err.message ? err.message : 'the call failed';
+        if (--pending === 0) doneExpanding(added, failure);
       })
       .findEventPages(link.trim());
   });
 });
 
-function doneExpanding(added){
+function doneExpanding(added, failure){
   $('expand').disabled = false;
+  renderPerPage();
+  if (failure && !added){
+    $('expandNote').textContent = '';
+    $('out').innerHTML = panel('', '<div class="note bad">Could not look for ' +
+      'event pages: ' + esc(failure) + '</div>');
+    return;
+  }
   $('expandNote').textContent = added
     ? added + ' event page' + (added > 1 ? 's' : '') + ' added'
-    : 'No event pages found';
-  renderPerPage();
+    : 'This page links to no event pages';
 }
 
 var tabEdited = false;
