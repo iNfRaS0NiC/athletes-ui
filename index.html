@@ -102,6 +102,25 @@ h2{font:600 10.5px var(--sans);letter-spacing:.04em;color:var(--muted);margin:0 
 .sources{display:flex;flex-wrap:wrap;gap:0 22px;margin-top:16px;
   padding-top:13px;border-top:1px solid var(--line-soft)}
 .sources span{font:400 11.5px var(--sans);color:var(--muted)}
+
+#perPage{margin:10px 0 0;display:none}
+#perPage .lnk{display:grid;grid-template-columns:1fr 104px;gap:8px;
+  align-items:center;padding:6px 0;border-top:1px solid var(--line-soft)}
+#perPage .lnk:first-child{border-top:0}
+#perPage .name{font:400 11.5px var(--mono);color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#perPage .name b{color:var(--ink);font-weight:500}
+#perPage select{padding:5px 7px;font-size:11.5px}
+
+.ask{margin-top:12px;padding:13px;border:1px solid var(--flag);
+  border-radius:4px;background:var(--flag-bg);font-size:12.5px}
+.ask p{margin:0 0 11px}
+.ask .btns{display:flex;gap:8px;flex-wrap:wrap}
+.ask button{width:auto;margin:0;padding:7px 13px;border-radius:3px;
+  font:500 12px var(--sans);cursor:pointer;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink)}
+.ask button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.ask button:hover{border-color:var(--accent)}
 .sources b{font:500 12.5px var(--mono);color:var(--ink);margin-left:5px}
 
 pre{margin:0;padding:12px;border-radius:4px;background:var(--raised);
@@ -129,7 +148,14 @@ pre{margin:0;padding:12px;border-radius:4px;background:var(--raised);
     <label for="pages">Wikipedia links</label>
     <textarea id="pages" placeholder="https://en.wikipedia.org/wiki/2025_World_Boxing_Championships"></textarea>
     <p class="hint">One per line. Paste the address bar as it is.</p>
+    <div id="perPage"></div>
   </div>
+  <div class="field">
+    <label for="tabName">Tab name</label>
+    <input type="text" id="tabName" placeholder="taken from the first link">
+    <p class="hint">Same competition, same tab name, every time.</p>
+  </div>
+
   <div class="row">
     <div class="field">
       <label for="sport">Sport</label>
@@ -142,6 +168,7 @@ pre{margin:0;padding:12px;border-radius:4px;background:var(--raised);
         <option value="male">Male</option>
         <option value="female">Female</option>
       </select>
+      <p class="hint">Applies to every link unless one is set below.</p>
     </div>
   </div>
   <fieldset>
@@ -195,11 +222,64 @@ $('theme').addEventListener('click', function(){
 });
 
 var state = {};
+var perPage = {};   // link -> gender chosen for that link alone
 
-function options(){
+function titleOf(link){
+  var text = link.trim().split('#')[0].split('?')[0];
+  if (text.indexOf('/wiki/') > -1) text = text.split('/wiki/').pop();
+  try { text = decodeURIComponent(text); } catch (e) {}
+  return text.replace(/_/g, ' ');
+}
+
+/**
+ * A run can mix a men's page and a women's page, so each link gets its own
+ * selector once there is more than one. Blank means use the field above.
+ */
+var tabEdited = false;
+$('tabName').addEventListener('input', function(){ tabEdited = true; });
+
+function suggestTab(){
+  if (tabEdited) return;
+  var first = $('pages').value.split('\n').filter(function(x){ return x.trim(); })[0];
+  if (!first) { $('tabName').value = ''; return; }
+  google.script.run.withSuccessHandler(function(name){
+    if (!tabEdited) $('tabName').value = name;
+  }).suggestTabName(first);
+}
+
+function renderPerPage(){
+  suggestTab();
+  var links = $('pages').value.split('\n').filter(function(x){ return x.trim(); });
+  var box = $('perPage');
+  if (links.length < 2){ box.style.display = 'none'; box.innerHTML = ''; return; }
+
+  box.style.display = 'block';
+  box.innerHTML = links.map(function(link, i){
+    var name = titleOf(link);
+    return '<div class="lnk"><span class="name" title="' + esc(name) + '"><b>' +
+      (i + 1) + '.</b> ' + esc(name) + '</span>' +
+      '<select data-link="' + esc(link.trim()) + '">' +
+        '<option value="">Default</option>' +
+        '<option value="male">Male</option>' +
+        '<option value="female">Female</option>' +
+      '</select></div>';
+  }).join('');
+
+  Array.prototype.forEach.call(box.querySelectorAll('select'), function(sel){
+    var key = sel.getAttribute('data-link');
+    if (perPage[key]) sel.value = perPage[key];
+    sel.addEventListener('change', function(){ perPage[key] = sel.value; });
+  });
+}
+$('pages').addEventListener('input', renderPerPage);
+$('pages').addEventListener('change', renderPerPage);
+
+function options(genderOverride){
   return {
+    tabName: $('tabName').value.trim(),
+    tabMode: state.tabMode || 'new',
     sport: $('sport').value.trim(),
-    gender: $('gender').value,
+    gender: genderOverride || $('gender').value,
     wikitext: $('wikitext').checked,
     sweep: $('sweep').checked,
     enrich: $('enrich').checked,
@@ -332,7 +412,8 @@ function step(index){
       render();
       step(index + 1);
     })
-    .processPage(state.sheet, state.pages[index], options());
+    .processPage(state.sheet, state.pages[index],
+                 options(perPage[state.pages[index].trim()]));
 }
 
 function complain(message, focus){
@@ -352,12 +433,50 @@ $('form').addEventListener('submit', function(e){
       + 'be filled in afterwards without editing every row.', 'sport');
     return;
   }
+  var tab = $('tabName').value.trim();
+  if (!tab){
+    complain('Give the tab a name so the same competition always lands in the '
+      + 'same place.', 'tabName');
+    return;
+  }
+
+  google.script.run.withSuccessHandler(function(exists){
+    if (!exists) { begin(pages, 'new'); return; }
+    askAboutTab(pages, tab);
+  }).tabExists(tab);
+});
+
+/**
+ * The tab name is stable by design, so a repeat run always collides. Adding
+ * to the old tab or starting a fresh one are both reasonable, and only the
+ * person knows whether the old one has already been uploaded.
+ */
+function askAboutTab(pages, tab){
+  $('out').innerHTML = panel('', '<div class="ask">' +
+    '<p>A tab called <b>' + esc(tab) + '</b> already exists. ' +
+    'Adding to it keeps one tab per competition and skips anyone already ' +
+    'there. A new tab leaves the old one untouched.</p>' +
+    '<div class="btns">' +
+      '<button type="button" class="primary" id="askAppend">Add to it</button>' +
+      '<button type="button" id="askNew">New tab beside it</button>' +
+      '<button type="button" id="askCancel">Cancel</button>' +
+    '</div></div>');
+  $('askAppend').addEventListener('click', function(){ begin(pages, 'append'); });
+  $('askNew').addEventListener('click', function(){ begin(pages, 'new'); });
+  $('askCancel').addEventListener('click', function(){
+    $('out').innerHTML = panel('', '<p class="empty">Nothing was written.</p>');
+  });
+}
+
+function begin(pages, mode){
   $('run').disabled = true; $('run').textContent = 'Working...';
   setStatus('Starting', true);
   $('out').innerHTML = panel('', '<p class="empty">Reading the pages and asking Wikidata.</p>');
+  state = {tabMode: mode};
   google.script.run
     .withSuccessHandler(function(sheetName){
       state = {sheet: sheetName, pages: pages, log: [], blanks: {}, gaps: [],
+        tabMode: mode,
         totals: {total: 0, fromWikitext: 0, fromWikidata: 0, fromHtml: 0,
                  missingCountry: 0, missingDob: 0, missingGender: 0,
                  duplicates: 0, stated: 0}};
@@ -369,7 +488,7 @@ $('form').addEventListener('submit', function(e){
       setStatus('Stopped: ' + err.message, false);
     })
     .startJob(options());
-});
+}
 </script>
 </body>
 </html>
