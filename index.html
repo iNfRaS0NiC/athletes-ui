@@ -103,6 +103,14 @@ h2{font:600 10.5px var(--sans);letter-spacing:.04em;color:var(--muted);margin:0 
   padding-top:13px;border-top:1px solid var(--line-soft)}
 .sources span{font:400 11.5px var(--sans);color:var(--muted)}
 
+.expand{display:flex;gap:8px;align-items:center;margin-top:7px}
+.expand button{width:auto;margin:0;padding:6px 11px;border-radius:3px;
+  background:var(--raised);color:var(--ink);border:1px solid var(--line);
+  font:500 11.5px var(--sans);cursor:pointer}
+.expand button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.expand button:disabled{opacity:.5;cursor:progress}
+.expand span{font:400 11px var(--sans);color:var(--muted)}
+
 #perPage{margin:10px 0 0;display:none}
 #perPage .shared{font:400 11px var(--mono);color:var(--muted);
   padding:0 0 7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -150,6 +158,10 @@ pre{margin:0;padding:12px;border-radius:4px;background:var(--raised);
     <label for="pages">Wikipedia links</label>
     <textarea id="pages" placeholder="https://en.wikipedia.org/wiki/2025_World_Boxing_Championships"></textarea>
     <p class="hint">One per line. Paste the address bar as it is.</p>
+    <div class="expand">
+      <button type="button" id="expand">Find event pages</button>
+      <span id="expandNote"></span>
+    </div>
     <div id="perPage"></div>
   </div>
   <div class="field">
@@ -255,6 +267,52 @@ function commonPrefix(list){
  * A run can mix a men's page and a women's page, so each link gets its own
  * selector once there is more than one. Blank means use the field above.
  */
+/**
+ * A championship page lists only medallists. Its event pages hold the whole
+ * field, and there can be forty of them, so they are collected in one call
+ * and dropped into the box for the person to look over before running.
+ */
+$('expand').addEventListener('click', function(){
+  var links = $('pages').value.split('\n').filter(function(x){ return x.trim(); });
+  if (!links.length){
+    $('expandNote').textContent = 'Paste a championship link first.';
+    return;
+  }
+  var btn = $('expand');
+  btn.disabled = true;
+  $('expandNote').textContent = 'Looking\u2026';
+
+  var pending = links.length, added = 0;
+  var have = {};
+  links.forEach(function(l){ have[titleOf(l).toLowerCase()] = true; });
+
+  links.forEach(function(link){
+    google.script.run
+      .withSuccessHandler(function(found){
+        (found || []).forEach(function(title){
+          if (have[title.toLowerCase()]) return;
+          have[title.toLowerCase()] = true;
+          $('pages').value += '\n' + 'https://en.wikipedia.org/wiki/' +
+            encodeURI(title.replace(/ /g, '_'));
+          added++;
+        });
+        if (--pending === 0) doneExpanding(added);
+      })
+      .withFailureHandler(function(){
+        if (--pending === 0) doneExpanding(added);
+      })
+      .findEventPages(link.trim());
+  });
+});
+
+function doneExpanding(added){
+  $('expand').disabled = false;
+  $('expandNote').textContent = added
+    ? added + ' event page' + (added > 1 ? 's' : '') + ' added'
+    : 'No event pages found';
+  renderPerPage();
+}
+
 var tabEdited = false;
 $('tabName').addEventListener('input', function(){ tabEdited = true; });
 
