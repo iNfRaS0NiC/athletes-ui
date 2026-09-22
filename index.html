@@ -152,8 +152,8 @@ pre{margin:0;padding:12px;border-radius:4px;background:var(--raised);
       <div>Wikidata sweep<span>Every athlete linked from the page.</span></div></label>
     <label class="check"><input type="checkbox" id="enrich" checked>
       <div>Fill dates of birth<span>For athletes who have an article.</span></div></label>
-    <label class="check"><input type="checkbox" id="htmlFallback" checked>
-      <div>Read countries off the page<span>Only for athletes still missing one.</span></div></label>
+    <label class="check"><input type="checkbox" id="html" checked>
+      <div>Rendered tables<span>Hand-written result tables, including athletes with no article.</span></div></label>
   </fieldset>
   <fieldset>
     <legend>COLUMNS TO FILL</legend>
@@ -203,7 +203,7 @@ function options(){
     wikitext: $('wikitext').checked,
     sweep: $('sweep').checked,
     enrich: $('enrich').checked,
-    htmlFallback: $('htmlFallback').checked,
+    html: $('html').checked,
     includeDob: $('includeDob').checked,
     includePosition: $('includePosition').checked,
     requireSport: true
@@ -230,9 +230,16 @@ function render(){
     '<div class="sources">' +
       '<span>Page source<b>' + t.fromWikitext + '</b></span>' +
       '<span>Wikidata<b>' + t.fromWikidata + '</b></span>' +
-      '<span>Read off the page<b>' + t.fromHtml + '</b></span>' +
+      '<span>Rendered tables<b>' + t.fromHtml + '</b></span>' +
       (t.duplicates ? '<span>Duplicates skipped<b>' + t.duplicates + '</b></span>' : '') +
     '</div>'));
+
+  if (state.gaps.length){
+    out.push(panel('POSSIBLY INCOMPLETE',
+      state.gaps.map(function(g){
+        return '<div class="note bad">' + esc(g) + '</div>';
+      }).join('')));
+  }
 
   var keys = Object.keys(state.blanks);
   if (keys.length){
@@ -288,6 +295,7 @@ function step(index){
       t.fromWikidata += res.fromWikidata; t.fromHtml += res.fromHtml || 0;
       t.missingDob += res.missingDob; t.missingGender += res.missingGender;
       t.missingCountry += res.missingCountry || 0;
+      t.stated += res.stated || 0;
       for (var k in res.blanks){
         if (!state.blanks[k]) state.blanks[k] = {count: 0, reason: res.blanks[k].reason};
         state.blanks[k].count += res.blanks[k].count;
@@ -296,7 +304,21 @@ function step(index){
       state.log.push(res.title);
       state.log.push('  ' + res.total + ' athletes: ' + res.fromWikitext +
         ' from the page source, ' + res.fromWikidata + ' more from Wikidata');
-      if (res.fromHtml) state.log.push('  ' + res.fromHtml + ' countries read off the page');
+      if (res.fromHtml) {
+        state.log.push('  ' + res.fromHtml + ' more from the rendered tables');
+      }
+      if (res.filledCountries) {
+        state.log.push('  ' + res.filledCountries + ' countries read off the page');
+      }
+      if (res.stated) {
+        state.log.push('  page states ' + res.stated + ' competitors -> ' +
+          res.coverage + '% coverage');
+        if (res.coverage < 80) {
+          state.gaps.push(res.title + ': ' + res.total + ' of ' + res.stated +
+            ' competitors (' + res.coverage + '%). The missing ones are most ' +
+            'likely athletes with no Wikipedia article.');
+        }
+      }
       if (res.duplicates) {
         state.log.push('  ' + res.duplicates + ' already on the sheet, skipped' +
           (res.enriched ? ' (' + res.enriched + ' gaps filled in)' : ''));
@@ -335,10 +357,10 @@ $('form').addEventListener('submit', function(e){
   $('out').innerHTML = panel('', '<p class="empty">Reading the pages and asking Wikidata.</p>');
   google.script.run
     .withSuccessHandler(function(sheetName){
-      state = {sheet: sheetName, pages: pages, log: [], blanks: {},
+      state = {sheet: sheetName, pages: pages, log: [], blanks: {}, gaps: [],
         totals: {total: 0, fromWikitext: 0, fromWikidata: 0, fromHtml: 0,
                  missingCountry: 0, missingDob: 0, missingGender: 0,
-                 duplicates: 0}};
+                 duplicates: 0, stated: 0}};
       step(0);
     })
     .withFailureHandler(function(err){
