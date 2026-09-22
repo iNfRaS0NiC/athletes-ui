@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<base target="_top">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EDF0F2; --surface:#fff; --ink:#0F1B24; --muted:#5B6B76;
+  --line:#C6D0D6; --line-soft:#E1E7EA; --accent:#1F5C7A;
+  --flag:#8A5D00; --flag-bg:#FBF2DE; --alert:#8C2F23; --alert-bg:#FBEAE7;
+  --good:#1E6B4F; --sans:"IBM Plex Sans",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font:400 14px/1.5 var(--sans)}
+.wrap{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;padding:16px;
+  height:100vh;align-items:start}
+@media(max-width:760px){.wrap{grid-template-columns:1fr;height:auto}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:16px}
+label{display:block;font-size:12.5px;font-weight:500;margin:0 0 4px}
+.hint{font-size:11.5px;color:var(--muted);margin:3px 0 0}
+textarea,input,select{width:100%;padding:8px 9px;border:1px solid var(--line);
+  border-radius:4px;font:400 13px/1.4 var(--mono);background:#fff;color:var(--ink)}
+textarea{min-height:92px;resize:vertical}
+select{font-family:var(--sans)}
+.field{margin-bottom:14px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+fieldset{border:0;border-top:1px solid var(--line-soft);margin:16px 0 0;padding:12px 0 0}
+legend{padding:0;font-size:11.5px;font-weight:600;color:var(--muted)}
+.check{display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;font-size:12.5px}
+.check input{margin:3px 0 0;accent-color:var(--accent);flex:none;width:auto}
+.check span{display:block;font-size:11.5px;color:var(--muted)}
+button{font:500 13.5px var(--sans);border-radius:4px;cursor:pointer;width:100%;
+  margin-top:16px;padding:10px;background:var(--accent);color:#fff;border:1px solid var(--accent)}
+button:hover:not(:disabled){background:#17485F}
+button:disabled{opacity:.55;cursor:progress}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#out{max-height:calc(100vh - 32px);overflow:auto}
+#out>*+*{margin-top:14px}
+.empty{color:var(--muted);text-align:center;padding:36px 4px}
+h2{font-size:12px;font-weight:600;margin:0 0 9px;color:var(--muted)}
+.ledger{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));margin:0}
+.ledger div{padding:2px 12px;border-left:2px solid var(--line-soft)}
+.ledger div:first-child{border-left-color:var(--accent)}
+.ledger dt{font-size:11.5px;color:var(--muted)}
+.ledger dd{margin:2px 0 0;font:500 21px/1.1 var(--mono)}
+.ledger dd.ok{color:var(--good)} .ledger dd.check{color:var(--flag)}
+pre{margin:0;font:400 12px/1.6 var(--mono);white-space:pre-wrap;background:#F5F7F8;
+  border:1px solid var(--line-soft);border-radius:4px;padding:11px}
+.note{border-left:3px solid var(--flag);background:var(--flag-bg);padding:10px 12px;
+  border-radius:0 4px 4px 0;font-size:12.5px}
+.note+.note{margin-top:7px}
+.note.bad{border-left-color:var(--alert);background:var(--alert-bg)}
+.note b{font-weight:600}
+.bar{height:3px;background:var(--line-soft);border-radius:2px;overflow:hidden;margin-top:10px}
+.bar i{display:block;height:100%;background:var(--accent);width:0;transition:width .25s}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<form class="panel" id="form">
+  <div class="field">
+    <label for="pages">Wikipedia links</label>
+    <textarea id="pages" placeholder="https://en.wikipedia.org/wiki/2025_World_Men's_Handball_Championship_squads"></textarea>
+    <p class="hint">One per line. Paste the address bar as it is.</p>
+  </div>
+  <div class="row">
+    <div class="field">
+      <label for="sport">Sport</label>
+      <input type="text" id="sport" placeholder="handball">
+    </div>
+    <div class="field">
+      <label for="gender">Gender</label>
+      <select id="gender">
+        <option value="">Read from the page</option>
+        <option value="male">Male</option>
+        <option value="female">Female</option>
+      </select>
+    </div>
+  </div>
+  <fieldset>
+    <legend>Where to look</legend>
+    <label class="check"><input type="checkbox" id="wikitext" checked>
+      <div>Page source<span>Squad and medal templates.</span></div></label>
+    <label class="check"><input type="checkbox" id="sweep" checked>
+      <div>Wikidata sweep<span>Every athlete linked from the page.</span></div></label>
+    <label class="check"><input type="checkbox" id="enrich" checked>
+      <div>Fill dates of birth<span>For athletes who have an article.</span></div></label>
+  </fieldset>
+  <fieldset>
+    <legend>Columns to fill</legend>
+    <label class="check"><input type="checkbox" id="includeDob" checked><div>DOB</div></label>
+    <label class="check"><input type="checkbox" id="includePosition"><div>Position</div></label>
+  </fieldset>
+  <button id="run" type="submit">Extract athletes</button>
+  <div class="bar"><i id="bar"></i></div>
+</form>
+<section id="out"><div class="panel empty">Paste a link to start.</div></section>
+</div>
+
+<script>
+var $ = function (id) { return document.getElementById(id); };
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function panel(title, inner){
+  return '<div class="panel">' + (title ? '<h2>' + title + '</h2>' : '') + inner + '</div>';
+}
+function cell(label, value, cls){
+  return '<div><dt>' + label + '</dt><dd class="' + (cls||'') + '">' + value + '</dd></div>';
+}
+
+var state = {};
+
+function options(){
+  return {
+    sport: $('sport').value.trim(),
+    gender: $('gender').value,
+    wikitext: $('wikitext').checked,
+    sweep: $('sweep').checked,
+    enrich: $('enrich').checked,
+    includeDob: $('includeDob').checked,
+    includePosition: $('includePosition').checked,
+    requireSport: true
+  };
+}
+
+function render(){
+  var out = [];
+  var totals = state.totals;
+  out.push(panel('', '<dl class="ledger">' +
+    cell('Athletes', totals.total, totals.total ? 'ok' : 'check') +
+    cell('From source', totals.fromWikitext) +
+    cell('From Wikidata', totals.fromWikidata) +
+    cell('Missing DOB', totals.missingDob, totals.missingDob ? 'check' : '') +
+    cell('Missing gender', totals.missingGender, totals.missingGender ? 'check' : '') +
+  '</dl>'));
+
+  var keys = Object.keys(state.blanks);
+  if (keys.length){
+    out.push(panel('Country left blank - decide manually',
+      keys.map(function(k){
+        var b = state.blanks[k];
+        return '<div class="note"><b>' + esc(k) + '</b> &mdash; ' + b.count +
+          ' row' + (b.count > 1 ? 's' : '') + '<br>' + esc(b.reason) + '</div>';
+      }).join('')));
+  }
+  out.push(panel('What it did', '<pre>' + esc(state.log.join('\n')) + '</pre>'));
+  $('out').innerHTML = out.join('');
+}
+
+function finish(){
+  google.script.run.withSuccessHandler(function(written){
+    state.log.push('');
+    state.log.push('Wrote ' + written + ' rows to the tab "' + state.sheet + '".');
+    render();
+    $('run').disabled = false; $('run').textContent = 'Extract athletes';
+    $('bar').style.width = '0';
+  }).finishJob(state.sheet);
+}
+
+function step(index){
+  if (index >= state.pages.length) { finish(); return; }
+  $('bar').style.width = Math.round(index / state.pages.length * 100) + '%';
+
+  google.script.run
+    .withSuccessHandler(function(res){
+      var t = state.totals;
+      t.total += res.total; t.fromWikitext += res.fromWikitext;
+      t.fromWikidata += res.fromWikidata;
+      t.missingDob += res.missingDob; t.missingGender += res.missingGender;
+      for (var k in res.blanks){
+        if (!state.blanks[k]) state.blanks[k] = {count: 0, reason: res.blanks[k].reason};
+        state.blanks[k].count += res.blanks[k].count;
+      }
+      state.log.push(res.title);
+      state.log.push('  ' + res.total + ' athletes: ' + res.fromWikitext +
+        ' from the page source, ' + res.fromWikidata + ' more from Wikidata');
+      if (!res.total) state.log.push('  nothing found - try a sub-page for a single event');
+      render();
+      step(index + 1);
+    })
+    .withFailureHandler(function(err){
+      state.log.push(state.pages[index] + ' failed: ' + err.message);
+      render();
+      step(index + 1);
+    })
+    .processPage(state.sheet, state.pages[index], options());
+}
+
+$('form').addEventListener('submit', function(e){
+  e.preventDefault();
+  var pages = $('pages').value.split('\n').filter(function(x){ return x.trim(); });
+  if (!pages.length){
+    $('out').innerHTML = panel('', '<div class="note bad">Paste at least one Wikipedia link.</div>');
+    return;
+  }
+  $('run').disabled = true; $('run').textContent = 'Working...';
+  $('out').innerHTML = panel('', '<p class="empty">Reading the pages and asking Wikidata.</p>');
+
+  google.script.run
+    .withSuccessHandler(function(sheetName){
+      state = {sheet: sheetName, pages: pages, log: [], blanks: {},
+        totals: {total: 0, fromWikitext: 0, fromWikidata: 0,
+                 missingDob: 0, missingGender: 0}};
+      step(0);
+    })
+    .withFailureHandler(function(err){
+      $('out').innerHTML = panel('', '<div class="note bad">' + esc(err.message) + '</div>');
+      $('run').disabled = false; $('run').textContent = 'Extract athletes';
+    })
+    .startJob(options());
+});
+</script>
+</body>
+</html>
