@@ -72,6 +72,12 @@ legend{padding:0;font:600 10.5px var(--sans);color:var(--muted);letter-spacing:.
   font:600 13.5px var(--sans);letter-spacing:.01em}
 #run:hover:not(:disabled){background:var(--accent-hi)}
 #run:disabled{opacity:.5;cursor:progress}
+#run.done{background:var(--good)}
+.status{display:flex;align-items:center;gap:8px;font:500 12px var(--sans);
+  color:var(--good);margin-top:10px}
+.status.busy{color:var(--muted)}
+.status i{width:7px;height:7px;border-radius:50%;background:currentColor;
+  flex:none;display:block}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .bar{height:2px;background:var(--line-soft);border-radius:2px;margin-top:9px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--accent);width:0;transition:width .3s}
@@ -80,11 +86,14 @@ legend{padding:0;font:600 10.5px var(--sans);color:var(--muted);letter-spacing:.
 .empty{color:var(--muted);text-align:center;padding:40px 8px;font-size:13px}
 h2{font:600 10.5px var(--sans);letter-spacing:.04em;color:var(--muted);margin:0 0 10px}
 
-.ledger{display:grid;grid-template-columns:repeat(auto-fit,minmax(98px,1fr));margin:0;gap:1px}
-.ledger div{padding:1px 13px;border-left:2px solid var(--line)}
+.ledger{display:grid;grid-template-columns:repeat(3,1fr);margin:0;
+  row-gap:14px;column-gap:0}
+@media(min-width:960px){.ledger{grid-template-columns:repeat(6,1fr)}}
+.ledger div{padding:1px 12px;border-left:2px solid var(--line);min-width:0}
 .ledger div:first-child{border-left-color:var(--accent)}
-.ledger dt{font:400 11px var(--sans);color:var(--muted)}
-.ledger dd{margin:3px 0 0;font:500 22px/1 var(--mono);letter-spacing:-.02em}
+.ledger dt{font:400 11px var(--sans);color:var(--muted);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.ledger dd{margin:3px 0 0;font:500 21px/1 var(--mono);letter-spacing:-.02em}
 .ledger dd.ok{color:var(--good)} .ledger dd.check{color:var(--flag)}
 
 pre{margin:0;padding:12px;border-radius:4px;background:var(--raised);
@@ -145,6 +154,7 @@ pre{margin:0;padding:12px;border-radius:4px;background:var(--raised);
   </fieldset>
   <button id="run" type="submit">Extract athletes</button>
   <div class="bar"><i id="bar"></i></div>
+  <div class="status" id="status" style="display:none"><i></i><span></span></div>
 </form>
 <section id="out"><div class="panel empty">Paste a link to start.</div></section>
 </div>
@@ -216,19 +226,40 @@ function render(){
   $('out').innerHTML = out.join('');
 }
 
+function setStatus(text, busy){
+  var box = $('status');
+  if (!text) { box.style.display = 'none'; return; }
+  box.style.display = 'flex';
+  box.className = busy ? 'status busy' : 'status';
+  box.lastChild.textContent = text;
+}
+
 function finish(){
-  google.script.run.withSuccessHandler(function(written){
-    state.log.push('');
-    state.log.push('Wrote ' + written + ' rows to the tab "' + state.sheet + '".');
-    render();
-    $('run').disabled = false; $('run').textContent = 'Extract athletes';
-    $('bar').style.width = '0';
-  }).finishJob(state.sheet);
+  setStatus('Writing to the sheet', true);
+  google.script.run
+    .withSuccessHandler(function(written){
+      state.log.push('');
+      state.log.push('Wrote ' + written + ' rows to the tab "' + state.sheet + '".');
+      render();
+      $('bar').style.width = '100%';
+      $('run').disabled = false;
+      $('run').textContent = 'Extract athletes';
+      setStatus('Done - ' + written + ' rows in "' + state.sheet + '"', false);
+    })
+    .withFailureHandler(function(err){
+      state.log.push('Could not finish: ' + err.message);
+      render();
+      $('run').disabled = false;
+      $('run').textContent = 'Extract athletes';
+      setStatus('Stopped: ' + err.message, false);
+    })
+    .finishJob(state.sheet);
 }
 
 function step(index){
   if (index >= state.pages.length) { finish(); return; }
   $('bar').style.width = Math.round(index / state.pages.length * 100) + '%';
+  setStatus('Page ' + (index + 1) + ' of ' + state.pages.length, true);
   google.script.run
     .withSuccessHandler(function(res){
       var t = state.totals;
@@ -263,6 +294,7 @@ $('form').addEventListener('submit', function(e){
     return;
   }
   $('run').disabled = true; $('run').textContent = 'Working...';
+  setStatus('Starting', true);
   $('out').innerHTML = panel('', '<p class="empty">Reading the pages and asking Wikidata.</p>');
   google.script.run
     .withSuccessHandler(function(sheetName){
@@ -274,6 +306,7 @@ $('form').addEventListener('submit', function(e){
     .withFailureHandler(function(err){
       $('out').innerHTML = panel('', '<div class="note bad">' + esc(err.message) + '</div>');
       $('run').disabled = false; $('run').textContent = 'Extract athletes';
+      setStatus('Stopped: ' + err.message, false);
     })
     .startJob(options());
 });
