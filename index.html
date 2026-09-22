@@ -104,13 +104,15 @@ h2{font:600 10.5px var(--sans);letter-spacing:.04em;color:var(--muted);margin:0 
 .sources span{font:400 11.5px var(--sans);color:var(--muted)}
 
 #perPage{margin:10px 0 0;display:none}
-#perPage .lnk{display:grid;grid-template-columns:1fr 104px;gap:8px;
+#perPage .shared{font:400 11px var(--mono);color:var(--muted);
+  padding:0 0 7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#perPage .lnk{display:grid;grid-template-columns:1fr 92px;gap:8px;
   align-items:center;padding:6px 0;border-top:1px solid var(--line-soft)}
 #perPage .lnk:first-child{border-top:0}
-#perPage .name{font:400 11.5px var(--mono);color:var(--muted);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#perPage .name b{color:var(--ink);font-weight:500}
-#perPage select{padding:5px 7px;font-size:11.5px}
+#perPage .name{font:400 11.5px/1.4 var(--mono);color:var(--ink);
+  overflow-wrap:anywhere;word-break:break-word}
+#perPage .name i{color:var(--muted);font-style:normal;margin-right:4px}
+#perPage select{padding:5px 6px;font-size:11.5px}
 
 .ask{margin-top:12px;padding:13px;border:1px solid var(--flag);
   border-radius:4px;background:var(--flag-bg);font-size:12.5px}
@@ -232,6 +234,24 @@ function titleOf(link){
 }
 
 /**
+ * Pages of one competition share a long opening, so showing it on every line
+ * hides the only part that differs. It is printed once and the rows keep the
+ * tail: "- Individual", "- Team", "- Women's finweight".
+ */
+function commonPrefix(list){
+  if (list.length < 2) return '';
+  var prefix = list[0];
+  list.forEach(function(item){
+    var i = 0;
+    while (i < prefix.length && i < item.length && prefix[i] === item[i]) i++;
+    prefix = prefix.substring(0, i);
+  });
+  // cut back to a word boundary so the tail stays readable
+  prefix = prefix.replace(/[^ ]*$/, '');
+  return prefix.length >= 12 ? prefix : '';
+}
+
+/**
  * A run can mix a men's page and a women's page, so each link gets its own
  * selector once there is more than one. Blank means use the field above.
  */
@@ -254,16 +274,22 @@ function renderPerPage(){
   if (links.length < 2){ box.style.display = 'none'; box.innerHTML = ''; return; }
 
   box.style.display = 'block';
-  box.innerHTML = links.map(function(link, i){
-    var name = titleOf(link);
-    return '<div class="lnk"><span class="name" title="' + esc(name) + '"><b>' +
-      (i + 1) + '.</b> ' + esc(name) + '</span>' +
-      '<select data-link="' + esc(link.trim()) + '">' +
-        '<option value="">Default</option>' +
-        '<option value="male">Male</option>' +
-        '<option value="female">Female</option>' +
-      '</select></div>';
-  }).join('');
+  var titles = links.map(titleOf);
+  var shared = commonPrefix(titles);
+
+  box.innerHTML =
+    (shared ? '<div class="shared" title="' + esc(shared) + '">' +
+      esc(shared) + '\u2026</div>' : '') +
+    links.map(function(link, i){
+      var rest = titles[i].substring(shared.length) || titles[i];
+      return '<div class="lnk"><span class="name" title="' + esc(titles[i]) +
+        '"><i>' + (i + 1) + '.</i>' + esc(rest) + '</span>' +
+        '<select data-link="' + esc(link.trim()) + '">' +
+          '<option value="">Default</option>' +
+          '<option value="male">Male</option>' +
+          '<option value="female">Female</option>' +
+        '</select></div>';
+    }).join('');
 
   Array.prototype.forEach.call(box.querySelectorAll('select'), function(sel){
     var key = sel.getAttribute('data-link');
