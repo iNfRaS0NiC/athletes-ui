@@ -86,15 +86,23 @@ legend{padding:0;font:600 10.5px var(--sans);color:var(--muted);letter-spacing:.
 .empty{color:var(--muted);text-align:center;padding:40px 8px;font-size:13px}
 h2{font:600 10.5px var(--sans);letter-spacing:.04em;color:var(--muted);margin:0 0 10px}
 
-.ledger{display:grid;grid-template-columns:repeat(3,1fr);margin:0;
-  row-gap:14px;column-gap:0}
-@media(min-width:960px){.ledger{grid-template-columns:repeat(6,1fr)}}
-.ledger div{padding:1px 12px;border-left:2px solid var(--line);min-width:0}
+.ledger{display:grid;grid-template-columns:repeat(2,1fr);margin:0;row-gap:16px}
+@media(min-width:700px){.ledger{grid-template-columns:repeat(4,1fr)}}
+.ledger div{padding:1px 14px;border-left:2px solid var(--line);min-width:0}
 .ledger div:first-child{border-left-color:var(--accent)}
-.ledger dt{font:400 11px var(--sans);color:var(--muted);white-space:nowrap;
+.ledger div.hit{border-left-color:var(--alert)}
+.ledger div.warn{border-left-color:var(--flag)}
+.ledger dt{font:500 11px var(--sans);color:var(--muted);white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
-.ledger dd{margin:3px 0 0;font:500 21px/1 var(--mono);letter-spacing:-.02em}
-.ledger dd.ok{color:var(--good)} .ledger dd.check{color:var(--flag)}
+.ledger dd{margin:4px 0 0;font:500 26px/1 var(--mono);letter-spacing:-.02em}
+.ledger dd.ok{color:var(--good)}
+.ledger dd.bad{color:var(--alert)}
+.ledger dd.warn{color:var(--flag)}
+
+.sources{display:flex;flex-wrap:wrap;gap:0 22px;margin-top:16px;
+  padding-top:13px;border-top:1px solid var(--line-soft)}
+.sources span{font:400 11.5px var(--sans);color:var(--muted)}
+.sources b{font:500 12.5px var(--mono);color:var(--ink);margin-left:5px}
 
 pre{margin:0;padding:12px;border-radius:4px;background:var(--raised);
   border:1px solid var(--line-soft);font:400 11.5px/1.65 var(--mono);
@@ -202,16 +210,28 @@ function options(){
   };
 }
 
+function gap(label, value, severity){
+  // country and gender block an upload; a missing date only weakens the row
+  var cls = value ? severity : 'ok';
+  var edge = value ? (severity === 'bad' ? ' class="hit"' : ' class="warn"') : '';
+  return '<div' + edge + '><dt>' + label + '</dt>' +
+    '<dd class="' + cls + '">' + value + '</dd></div>';
+}
+
 function render(){
   var t = state.totals, out = [];
-  out.push(panel('', '<dl class="ledger">' +
-    cell('Athletes', t.total, t.total ? 'ok' : 'check') +
-    cell('From source', t.fromWikitext) +
-    cell('From Wikidata', t.fromWikidata) +
-    cell('From page', t.fromHtml) +
-    cell('Missing DOB', t.missingDob, t.missingDob ? 'check' : '') +
-    cell('Missing gender', t.missingGender, t.missingGender ? 'check' : '') +
-  '</dl>'));
+  out.push(panel('',
+    '<dl class="ledger">' +
+      '<div><dt>Athletes</dt><dd class="ok">' + t.total + '</dd></div>' +
+      gap('No country', t.missingCountry, 'bad') +
+      gap('No gender', t.missingGender, 'bad') +
+      gap('No date of birth', t.missingDob, 'warn') +
+    '</dl>' +
+    '<div class="sources">' +
+      '<span>Page source<b>' + t.fromWikitext + '</b></span>' +
+      '<span>Wikidata<b>' + t.fromWikidata + '</b></span>' +
+      '<span>Read off the page<b>' + t.fromHtml + '</b></span>' +
+    '</div>'));
 
   var keys = Object.keys(state.blanks);
   if (keys.length){
@@ -266,6 +286,7 @@ function step(index){
       t.total += res.total; t.fromWikitext += res.fromWikitext;
       t.fromWikidata += res.fromWikidata; t.fromHtml += res.fromHtml || 0;
       t.missingDob += res.missingDob; t.missingGender += res.missingGender;
+      t.missingCountry += res.missingCountry || 0;
       for (var k in res.blanks){
         if (!state.blanks[k]) state.blanks[k] = {count: 0, reason: res.blanks[k].reason};
         state.blanks[k].count += res.blanks[k].count;
@@ -300,7 +321,7 @@ $('form').addEventListener('submit', function(e){
     .withSuccessHandler(function(sheetName){
       state = {sheet: sheetName, pages: pages, log: [], blanks: {},
         totals: {total: 0, fromWikitext: 0, fromWikidata: 0, fromHtml: 0,
-                 missingDob: 0, missingGender: 0}};
+                 missingCountry: 0, missingDob: 0, missingGender: 0}};
       step(0);
     })
     .withFailureHandler(function(err){
