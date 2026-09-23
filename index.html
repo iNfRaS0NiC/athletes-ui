@@ -429,14 +429,19 @@ function gap(label, value, severity){
 
 function render(){
   var t = state.totals, out = [];
+  // while running, the only numbers there are are per page; once the run is
+  // over the sheet is counted, and a swimmer in five events counts once
+  var f = state.final;
   out.push(panel('',
     '<dl class="ledger">' +
-      '<div><dt>Athletes</dt><dd class="ok">' + t.total + '</dd></div>' +
-      gap('No country', t.missingCountry, 'bad') +
-      gap('No gender', t.missingGender, 'bad') +
-      gap('No date of birth', t.missingDob, 'warn') +
+      '<div><dt>' + (f ? 'Athletes' : 'Found so far') + '</dt><dd class="ok">' +
+        (f ? f.rows : t.total) + '</dd></div>' +
+      gap('No country', f ? f.noCountry : t.missingCountry, 'bad') +
+      gap('No gender', f ? f.noGender : t.missingGender, 'bad') +
+      gap('No date of birth', f ? f.noDob : t.missingDob, 'warn') +
     '</dl>' +
     '<div class="sources">' +
+      (f ? '<span>Found on pages<b>' + t.total + '</b></span>' : '') +
       '<span>Page source<b>' + t.fromWikitext + '</b></span>' +
       '<span>Wikidata<b>' + t.fromWikidata + '</b></span>' +
       '<span>Rendered tables<b>' + t.fromHtml + '</b></span>' +
@@ -550,15 +555,16 @@ function setStatus(text, busy){
 function finish(){
   setStatus('Writing to the sheet', true);
   google.script.run
-    .withSuccessHandler(function(written){
+    .withSuccessHandler(function(result){
+      state.final = result;
       logLine('');
-      logLine('Wrote ' + written + ' rows under "' + state.title +
+      logLine('Wrote ' + result.rows + ' rows under "' + state.title +
         '" in ' + state.sheet + '.', 'page');
       render();
       $('bar').style.width = '100%';
       $('run').disabled = false;
       $('run').textContent = 'Extract athletes';
-      setStatus('Done - ' + written + ' rows under "' + state.title + '"', false);
+      setStatus('Done - ' + result.rows + ' rows under "' + state.title + '"', false);
     })
     .withFailureHandler(function(err){
       logLine('Could not finish: ' + err.message, 'bad');
@@ -611,6 +617,11 @@ function step(index){
       if (res.fromHtml) logLine('  ' + res.fromHtml + ' more from the rendered tables', 'dim');
       if (res.notPeople && res.notPeople.length) {
         logLine('  left out, not people: ' + res.notPeople.join(', '), 'dim');
+      }
+      if (res.notInTable && res.notInTable.length) {
+        logLine('  left out, named on the page but not in the results: ' +
+          res.notInTable.slice(0, 8).join(', ') +
+          (res.notInTable.length > 8 ? ' and ' + (res.notInTable.length - 8) + ' more' : ''), 'dim');
       }
       if (res.filledCountries) logLine('  ' + res.filledCountries + ' countries read off the page', 'dim');
       if (res.stated) {
