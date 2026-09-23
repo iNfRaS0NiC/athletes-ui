@@ -274,10 +274,18 @@ function badLinks(list){
 }
 
 function titleOf(link){
-  var text = link.trim().split('#')[0].split('?')[0];
+  var raw = link.trim();
+  var hash = raw.indexOf('#');
+  var anchor = hash > -1 ? raw.substring(hash + 1) : '';
+  var text = raw.split('#')[0].split('?')[0];
   if (text.indexOf('/wiki/') > -1) text = text.split('/wiki/').pop();
   try { text = decodeURIComponent(text); } catch (e) {}
-  return text.replace(/_/g, ' ');
+  text = text.replace(/_/g, ' ');
+  if (anchor) {
+    try { anchor = decodeURIComponent(anchor); } catch (e) {}
+    text += ' \u2013 ' + anchor.replace(/_/g, ' ') + ' only';
+  }
+  return text;
 }
 
 /**
