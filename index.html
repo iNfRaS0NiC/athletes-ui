@@ -136,6 +136,18 @@ h2{font:600 10.5px var(--sans);letter-spacing:.04em;color:var(--muted);margin:0 
 pre{margin:0;padding:12px;border-radius:4px;background:var(--raised);
   border:1px solid var(--line-soft);font:400 11.5px/1.65 var(--mono);
   white-space:pre-wrap;color:var(--ink)}
+pre .page{color:var(--ink);font-weight:500}
+pre .bad{color:var(--alert)}
+pre .warn{color:var(--flag)}
+pre .dim{color:var(--muted)}
+
+.gaps{margin:0;padding:0;list-style:none}
+.gaps li{display:grid;grid-template-columns:1fr auto;gap:4px 12px;
+  padding:9px 0;border-top:1px solid var(--line-soft);font-size:12.5px}
+.gaps li:first-child{border-top:0;padding-top:0}
+.gaps .t{font-weight:500}
+.gaps .n{font:500 12px var(--mono);color:var(--alert);text-align:right;white-space:nowrap}
+.gaps .who{grid-column:1/-1;font:400 11.5px var(--mono);color:var(--muted)}
 .note{border-left:2px solid var(--flag);background:var(--flag-bg);
   padding:10px 13px;border-radius:0 4px 4px 0;font-size:12.5px}
 .note+.note{margin-top:7px}
@@ -433,9 +445,31 @@ function render(){
           ' row' + (b.count > 1 ? 's' : '') + '<br>' + esc(b.reason) + '</div>';
       }).join('')));
   }
-  out.push(panel('WHAT IT DID', '<pre>' + esc(state.log.join('\n')) + '</pre>'));
+  if (state.pageGaps.length){
+    out.push(panel('PAGES WITH GAPS',
+      '<ul class="gaps">' + state.pageGaps.map(function(g){
+        var parts = [];
+        if (g.country) parts.push(g.country + ' no country');
+        if (g.gender) parts.push(g.gender + ' no gender');
+        var who = g.countryNames.concat(g.genderNames.filter(function(n){
+          return g.countryNames.indexOf(n) < 0; }));
+        return '<li><span class="t">' + esc(g.title) + '</span>' +
+          '<span class="n">' + parts.join(' &middot; ') + '</span>' +
+          (who.length ? '<span class="who">' + esc(who.join(', ')) +
+            ((g.country + g.gender) > who.length ? ' &hellip;' : '') + '</span>' : '') +
+          '</li>';
+      }).join('') + '</ul>'));
+  }
+
+  out.push(panel('WHAT IT DID', '<pre>' + state.log.map(function(line){
+    var level = typeof line === 'string' ? '' : line.level;
+    var text = typeof line === 'string' ? line : line.text;
+    return level ? '<span class="' + level + '">' + esc(text) + '</span>' : esc(text);
+  }).join('\n') + '</pre>'));
   $('out').innerHTML = out.join('');
 }
+
+function logLine(text, level){ state.log.push({text: text, level: level || ''}); }
 
 function setStatus(text, busy){
   var box = $('status');
@@ -449,8 +483,8 @@ function finish(){
   setStatus('Writing to the sheet', true);
   google.script.run
     .withSuccessHandler(function(written){
-      state.log.push('');
-      state.log.push('Wrote ' + written + ' rows to the tab "' + state.sheet + '".');
+      logLine('');
+      logLine('Wrote ' + written + ' rows to the tab "' + state.sheet + '".', 'page');
       render();
       $('bar').style.width = '100%';
       $('run').disabled = false;
@@ -458,7 +492,7 @@ function finish(){
       setStatus('Done - ' + written + ' rows in "' + state.sheet + '"', false);
     })
     .withFailureHandler(function(err){
-      state.log.push('Could not finish: ' + err.message);
+      logLine('Could not finish: ' + err.message, 'bad');
       render();
       $('run').disabled = false;
       $('run').textContent = 'Extract athletes';
@@ -484,34 +518,57 @@ function step(index){
         state.blanks[k].count += res.blanks[k].count;
       }
       t.duplicates += res.duplicates || 0;
-      state.log.push(res.title);
-      state.log.push('  ' + res.total + ' athletes: ' + res.fromWikitext +
+      var hasGap = (res.missingCountry || 0) + (res.missingGender || 0) > 0;
+      logLine(res.title, hasGap ? 'bad' : 'page');
+      logLine('  ' + res.total + ' athletes: ' + res.fromWikitext +
         ' from the page source, ' + res.fromWikidata + ' more from Wikidata');
-      if (res.fromHtml) {
-        state.log.push('  ' + res.fromHtml + ' more from the rendered tables');
+      if (res.missingCountry) {
+        logLine('  ' + res.missingCountry + ' without a country: ' +
+          (res.noCountryNames || []).join(', '), 'bad');
       }
-      if (res.filledCountries) {
-        state.log.push('  ' + res.filledCountries + ' countries read off the page');
+      if (res.missingGender) {
+        logLine('  ' + res.missingGender + ' without a gender: ' +
+          (res.noGenderNames || []).join(', '), 'bad');
       }
+      if (hasGap) {
+        state.pageGaps.push({title: res.title,
+          country: res.missingCountry || 0, gender: res.missingGender || 0,
+          countryNames: (res.noCountryNames || []).map(function(n){
+            return n.replace(/\s*\(.*\)$/, ''); }),
+          genderNames: res.noGenderNames || []});
+      }
+      if (res.fromHtml) logLine('  ' + res.fromHtml + ' more from the rendered tables', 'dim');
+      if (res.notPeople && res.notPeople.length) {
+        logLine('  left out, not people: ' + res.notPeople.join(', '), 'dim');
+      }
+      if (res.filledCountries) logLine('  ' + res.filledCountries + ' countries read off the page', 'dim');
       if (res.stated) {
-        state.log.push('  page states ' + res.stated + ' competitors -> ' +
-          res.coverage + '% coverage');
+        var covLevel = res.coverage < 80 || res.coverage > 105 ? 'warn' : 'dim';
+        logLine('  page states ' + res.stated + ' competitors -> ' +
+          res.coverage + '% coverage', covLevel);
         if (res.coverage < 80) {
           state.gaps.push(res.title + ': ' + res.total + ' of ' + res.stated +
             ' competitors (' + res.coverage + '%). The missing ones are most ' +
             'likely athletes with no Wikipedia article.');
         }
+        // more people than entered almost always means someone who did not
+        // compete got in - a past champion, a coach, a record holder
+        if (res.coverage > 105) {
+          state.gaps.push(res.title + ': ' + res.total + ' found but the page ' +
+            'states ' + res.stated + ' competitors (' + res.coverage + '%). ' +
+            'Someone who did not compete here was probably picked up.');
+        }
       }
       if (res.duplicates) {
-        state.log.push('  ' + res.duplicates + ' already on the sheet, skipped' +
-          (res.enriched ? ' (' + res.enriched + ' gaps filled in)' : ''));
+        logLine('  ' + res.duplicates + ' already on the sheet, skipped' +
+          (res.enriched ? ' (' + res.enriched + ' gaps filled in)' : ''), 'dim');
       }
-      if (!res.total) state.log.push('  nothing found - try a sub-page for a single event');
+      if (!res.total) logLine('  nothing found - try a sub-page for a single event', 'bad');
       render();
       step(index + 1);
     })
     .withFailureHandler(function(err){
-      state.log.push(state.pages[index] + ' failed: ' + err.message);
+      logLine(state.pages[index] + ' failed: ' + err.message, 'bad');
       render();
       step(index + 1);
     })
@@ -550,10 +607,28 @@ $('form').addEventListener('submit', function(e){
     return;
   }
 
-  google.script.run.withSuccessHandler(function(exists){
-    if (!exists) { begin(pages, 'new'); return; }
-    askAboutTab(pages, tab);
-  }).tabExists(tab);
+  // the first call to Apps Script takes a second or two to wake up; show
+  // that something is happening straight away instead of a still screen
+  $('run').disabled = true;
+  $('run').textContent = 'Working...';
+  setStatus('Checking the tab name', true);
+  $('out').innerHTML = panel('', '<p class="empty">Getting ready\u2026</p>');
+
+  google.script.run
+    .withSuccessHandler(function(exists){
+      if (!exists) { begin(pages, 'new'); return; }
+      $('run').disabled = false;
+      $('run').textContent = 'Extract athletes';
+      setStatus('', false);
+      askAboutTab(pages, tab);
+    })
+    .withFailureHandler(function(err){
+      $('run').disabled = false;
+      $('run').textContent = 'Extract athletes';
+      setStatus('Stopped: ' + err.message, false);
+      complain(err.message);
+    })
+    .tabExists(tab);
 });
 
 /**
@@ -580,12 +655,13 @@ function askAboutTab(pages, tab){
 
 function begin(pages, mode){
   $('run').disabled = true; $('run').textContent = 'Working...';
-  setStatus('Starting', true);
+  setStatus('Preparing the tab', true);
   $('out').innerHTML = panel('', '<p class="empty">Reading the pages and asking Wikidata.</p>');
   state = {tabMode: mode};
   google.script.run
     .withSuccessHandler(function(sheetName){
       state = {sheet: sheetName, pages: pages, log: [], blanks: {}, gaps: [],
+        pageGaps: [],
         tabMode: mode,
         totals: {total: 0, fromWikitext: 0, fromWikidata: 0, fromHtml: 0,
                  missingCountry: 0, missingDob: 0, missingGender: 0,
