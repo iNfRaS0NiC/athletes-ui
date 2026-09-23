@@ -148,6 +148,18 @@ pre .dim{color:var(--muted)}
 .gaps .t{font-weight:500}
 .gaps .n{font:500 12px var(--mono);color:var(--alert);text-align:right;white-space:nowrap}
 .gaps .who{grid-column:1/-1;font:400 11.5px var(--mono);color:var(--muted)}
+.gaps .act{grid-column:1/-1;display:flex;gap:8px;align-items:center;margin-top:3px}
+.gaps .act button{width:auto;margin:0;padding:5px 10px;border-radius:3px;
+  background:var(--raised);color:var(--ink);border:1px solid var(--line);
+  font:500 11px var(--sans);cursor:pointer}
+.gaps .act button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.gaps .act button:disabled{opacity:.5;cursor:progress}
+.gaps .act span{font:400 11px var(--sans);color:var(--muted)}
+.det{grid-column:1/-1;margin-top:8px}
+.det .layers{display:flex;flex-wrap:wrap;gap:4px 16px;margin-bottom:8px}
+.det .layers span{font:400 11px var(--sans);color:var(--muted)}
+.det .layers b{font:500 12px var(--mono);color:var(--ink);margin-left:4px}
+.det textarea{min-height:120px;font-size:11px;line-height:1.55}
 .note{border-left:2px solid var(--flag);background:var(--flag-bg);
   padding:10px 13px;border-radius:0 4px 4px 0;font-size:12.5px}
 .note+.note{margin-top:7px}
@@ -448,18 +460,26 @@ function render(){
       }).join('')));
   }
   if (state.pageGaps.length){
-    out.push(panel('PAGES WITH GAPS',
-      '<ul class="gaps">' + state.pageGaps.map(function(g){
+    out.push(panel('PAGES WITH PROBLEMS',
+      '<ul class="gaps">' + state.pageGaps.map(function(g, i){
         var parts = [];
+        if (g.failed) parts.push('failed');
         if (g.country) parts.push(g.country + ' no country');
         if (g.gender) parts.push(g.gender + ' no gender');
-        var who = g.countryNames.concat(g.genderNames.filter(function(n){
-          return g.countryNames.indexOf(n) < 0; }));
+        if (g.coverage) parts.push(g.coverage + '% coverage');
+        var who = (g.countryNames || []).concat((g.genderNames || []).filter(function(n){
+          return (g.countryNames || []).indexOf(n) < 0; }));
         return '<li><span class="t">' + esc(g.title) + '</span>' +
           '<span class="n">' + parts.join(' &middot; ') + '</span>' +
+          (g.failed ? '<span class="who">' + esc(g.failed) + '</span>' : '') +
           (who.length ? '<span class="who">' + esc(who.join(', ')) +
-            ((g.country + g.gender) > who.length ? ' &hellip;' : '') + '</span>' : '') +
-          '</li>';
+            (((g.country || 0) + (g.gender || 0)) > who.length ? ' &hellip;' : '') +
+            '</span>' : '') +
+          '<span class="act"><button type="button" data-gap="' + i + '"' +
+            (g.busy ? ' disabled' : '') + '>' +
+            (g.details ? 'Run again' : 'Details') + '</button>' +
+            (g.busy ? '<span>Looking at each layer\u2026</span>' : '') + '</span>' +
+          (g.details || '') + '</li>';
       }).join('') + '</ul>'));
   }
 
@@ -469,6 +489,52 @@ function render(){
     return level ? '<span class="' + level + '">' + esc(text) + '</span>' : esc(text);
   }).join('\n') + '</pre>'));
   $('out').innerHTML = out.join('');
+  wireDetails();
+}
+
+/**
+ * Details runs the same report as diagnose() in the editor, for one page,
+ * and shows it here - so nobody has to open Apps Script to see why a page
+ * came back thin. The full text can be copied and sent on.
+ */
+function wireDetails(){
+  Array.prototype.forEach.call(document.querySelectorAll('[data-gap]'), function(btn){
+    btn.addEventListener('click', function(){
+      var g = state.pageGaps[+btn.getAttribute('data-gap')];
+      g.busy = true; g.details = ''; render();
+      google.script.run
+        .withSuccessHandler(function(rep){
+          g.busy = false;
+          var L = rep.layers || {};
+          g.details = '<div class="det"><div class="layers">' +
+            '<span>Page source<b>' + (L.source || 0) + '</b></span>' +
+            '<span>Wikidata<b>' + (L.wikidata || 0) + '</b></span>' +
+            '<span>Scan<b>' + (L.scan || 0) + '</b></span>' +
+            '<span>Tables<b>' + (L.tables || 0) + '</b></span>' +
+            '<span>Merged<b>' + rep.total + (rep.stated ? ' / ' + rep.stated : '') + '</b></span>' +
+            (rep.conflicts ? '<span>Flag disagreements<b>' + rep.conflicts + '</b></span>' : '') +
+            '</div><textarea readonly>' + esc(rep.log) + '</textarea>' +
+            '<span class="act"><button type="button" data-copy="1">Copy the report</button>' +
+            '<span>for sending to whoever maintains the script</span></span></div>';
+          render();
+        })
+        .withFailureHandler(function(err){
+          g.busy = false;
+          g.details = '<div class="det"><div class="note bad">' + esc(err.message) + '</div></div>';
+          render();
+        })
+        .diagnosePage(g.link, $('sport').value.trim(), g.gender ? '' : ($('gender').value || ''));
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-copy]'), function(btn){
+    btn.addEventListener('click', function(){
+      var area = btn.closest('.det').querySelector('textarea');
+      area.focus(); area.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) {}
+      btn.textContent = ok ? 'Copied' : 'Selected - press Ctrl+C';
+    });
+  });
 }
 
 function logLine(text, level){ state.log.push({text: text, level: level || ''}); }
@@ -533,8 +599,10 @@ function step(index){
         logLine('  ' + res.missingGender + ' without a gender: ' +
           (res.noGenderNames || []).join(', '), 'bad');
       }
-      if (hasGap) {
-        state.pageGaps.push({title: res.title,
+      var odd = res.stated && (res.coverage < 80 || res.coverage > 105);
+      if (hasGap || odd) {
+        state.pageGaps.push({title: res.title, link: state.pages[index].trim(),
+          coverage: odd ? res.coverage : 0,
           country: res.missingCountry || 0, gender: res.missingGender || 0,
           countryNames: (res.noCountryNames || []).map(function(n){
             return n.replace(/\s*\(.*\)$/, ''); }),
@@ -572,6 +640,8 @@ function step(index){
     })
     .withFailureHandler(function(err){
       logLine(state.pages[index] + ' failed: ' + err.message, 'bad');
+      state.pageGaps.push({title: titleOf(state.pages[index]),
+        link: state.pages[index].trim(), failed: err.message});
       render();
       step(index + 1);
     })
