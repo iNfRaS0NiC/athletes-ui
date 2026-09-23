@@ -177,9 +177,10 @@ pre .dim{color:var(--muted)}
     <div id="perPage"></div>
   </div>
   <div class="field">
-    <label for="tabName">Tab name</label>
+    <label for="tabName">Section title</label>
     <input type="text" id="tabName" placeholder="taken from the first link">
-    <p class="hint">Same competition, same tab name, every time.</p>
+    <p class="hint">Written as a heading above this batch in the
+      Wiki-participants-creation tab.</p>
   </div>
 
   <div class="row">
@@ -393,6 +394,7 @@ function options(genderOverride){
   return {
     tabName: $('tabName').value.trim(),
     tabMode: state.tabMode || 'new',
+    sectionStart: state.sectionStart || 0,
     sport: $('sport').value.trim(),
     gender: genderOverride || $('gender').value,
     wikitext: $('wikitext').checked,
@@ -484,12 +486,13 @@ function finish(){
   google.script.run
     .withSuccessHandler(function(written){
       logLine('');
-      logLine('Wrote ' + written + ' rows to the tab "' + state.sheet + '".', 'page');
+      logLine('Wrote ' + written + ' rows under "' + state.title +
+        '" in ' + state.sheet + '.', 'page');
       render();
       $('bar').style.width = '100%';
       $('run').disabled = false;
       $('run').textContent = 'Extract athletes';
-      setStatus('Done - ' + written + ' rows in "' + state.sheet + '"', false);
+      setStatus('Done - ' + written + ' rows under "' + state.title + '"', false);
     })
     .withFailureHandler(function(err){
       logLine('Could not finish: ' + err.message, 'bad');
@@ -498,7 +501,7 @@ function finish(){
       $('run').textContent = 'Extract athletes';
       setStatus('Stopped: ' + err.message, false);
     })
-    .finishJob(state.sheet);
+    .finishJob(state.sheet, state.sectionStart);
 }
 
 function step(index){
@@ -611,16 +614,16 @@ $('form').addEventListener('submit', function(e){
   // that something is happening straight away instead of a still screen
   $('run').disabled = true;
   $('run').textContent = 'Working...';
-  setStatus('Checking the tab name', true);
+  setStatus('Checking the section title', true);
   $('out').innerHTML = panel('', '<p class="empty">Getting ready\u2026</p>');
 
   google.script.run
-    .withSuccessHandler(function(exists){
-      if (!exists) { begin(pages, 'new'); return; }
+    .withSuccessHandler(function(status){
+      if (!status || !status.exists) { begin(pages, 'new'); return; }
       $('run').disabled = false;
       $('run').textContent = 'Extract athletes';
       setStatus('', false);
-      askAboutTab(pages, tab);
+      askAboutTab(pages, tab, status.isLast);
     })
     .withFailureHandler(function(err){
       $('run').disabled = false;
@@ -628,7 +631,7 @@ $('form').addEventListener('submit', function(e){
       setStatus('Stopped: ' + err.message, false);
       complain(err.message);
     })
-    .tabExists(tab);
+    .sectionStatus(tab);
 });
 
 /**
@@ -636,17 +639,25 @@ $('form').addEventListener('submit', function(e){
  * to the old tab or starting a fresh one are both reasonable, and only the
  * person knows whether the old one has already been uploaded.
  */
-function askAboutTab(pages, tab){
-  $('out').innerHTML = panel('', '<div class="ask">' +
-    '<p>A tab called <b>' + esc(tab) + '</b> already exists. ' +
-    'Adding to it keeps one tab per competition and skips anyone already ' +
-    'there. A new tab leaves the old one untouched.</p>' +
+function askAboutTab(pages, tab, isLast){
+  // rows only ever go on at the bottom, so only the last section can grow;
+  // an earlier one would need rows pushed into the middle of the tab
+  var intro = 'A section called <b>' + esc(tab) + '</b> is already in ' +
+    'Wiki-participants-creation. ';
+  var body = isLast
+    ? 'It is the last one, so this batch can continue it - anyone already ' +
+      'there is skipped. Or start a new section below it.'
+    : 'It is not the last section, so this batch will go into a new section ' +
+      'at the bottom, numbered to tell the two apart.';
+
+  $('out').innerHTML = panel('', '<div class="ask"><p>' + intro + body + '</p>' +
     '<div class="btns">' +
-      '<button type="button" class="primary" id="askAppend">Add to it</button>' +
-      '<button type="button" id="askNew">New tab beside it</button>' +
+      (isLast ? '<button type="button" class="primary" id="askAppend">Add to it</button>' : '') +
+      '<button type="button"' + (isLast ? '' : ' class="primary"') +
+        ' id="askNew">New section</button>' +
       '<button type="button" id="askCancel">Cancel</button>' +
     '</div></div>');
-  $('askAppend').addEventListener('click', function(){ begin(pages, 'append'); });
+  if (isLast) $('askAppend').addEventListener('click', function(){ begin(pages, 'append'); });
   $('askNew').addEventListener('click', function(){ begin(pages, 'new'); });
   $('askCancel').addEventListener('click', function(){
     $('out').innerHTML = panel('', '<p class="empty">Nothing was written.</p>');
@@ -659,8 +670,9 @@ function begin(pages, mode){
   $('out').innerHTML = panel('', '<p class="empty">Reading the pages and asking Wikidata.</p>');
   state = {tabMode: mode};
   google.script.run
-    .withSuccessHandler(function(sheetName){
-      state = {sheet: sheetName, pages: pages, log: [], blanks: {}, gaps: [],
+    .withSuccessHandler(function(job){
+      state = {sheet: job.sheet, sectionStart: job.start, title: job.title,
+        pages: pages, log: [], blanks: {}, gaps: [],
         pageGaps: [],
         tabMode: mode,
         totals: {total: 0, fromWikitext: 0, fromWikidata: 0, fromHtml: 0,
