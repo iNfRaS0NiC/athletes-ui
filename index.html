@@ -415,6 +415,8 @@ function options(genderOverride){
     tabName: $('tabName').value.trim(),
     tabMode: state.tabMode || 'new',
     sectionStart: state.sectionStart || 0,
+    pageCount: (state.pages || []).length,
+    runTitle: state.title || '',
     sport: $('sport').value.trim(),
     gender: genderOverride || $('gender').value,
     wikitext: $('wikitext').checked,
