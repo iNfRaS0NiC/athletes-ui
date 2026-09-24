@@ -417,6 +417,7 @@ function options(genderOverride){
     sectionStart: state.sectionStart || 0,
     pageCount: (state.pages || []).length,
     runTitle: state.title || '',
+    continueFirst: !!state.continueFirst,
     sport: $('sport').value.trim(),
     gender: genderOverride || $('gender').value,
     wikitext: $('wikitext').checked,
@@ -552,6 +553,8 @@ function wireDetails(){
   });
 }
 
+function withIndex(o, index){ o.pageIndex = index; return o; }
+
 function logLine(text, level){ state.log.push({text: text, level: level || ''}); }
 
 function setStatus(text, busy){
@@ -667,7 +670,7 @@ function step(index){
       step(index + 1);
     })
     .processPage(state.sheet, state.pages[index],
-                 options(perPage[state.pages[index].trim()]));
+                 withIndex(options(perPage[state.pages[index].trim()]), index));
 }
 
 function complain(message, focus){
@@ -763,6 +766,7 @@ function begin(pages, mode){
   google.script.run
     .withSuccessHandler(function(job){
       state = {sheet: job.sheet, sectionStart: job.start, title: job.title,
+        continueFirst: !!job.continueFirst,
         pages: pages, log: [], blanks: {}, gaps: [],
         pageGaps: [],
         tabMode: mode,
